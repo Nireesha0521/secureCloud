@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Login</h1>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <p class="{{ category }}">{{ message }}</p>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        <form method="POST">
+            <label>Email:</label><input type="email" name="email" required><br>
+            <label>Password:</label><input type="password" name="password" required><br>
+            <button type="submit">Login</button>
+        </form>
+        <p>Forgot password? <a href="{{ url_for('forgot_password') }}">Reset it</a></p>
+        <p>No account? <a href="{{ url_for('register') }}">Register</a></p>
+    </div>
+</body>
+</html>

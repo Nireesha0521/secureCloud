@@ -1,0 +1,5 @@
+flask
+flask-mail
+pycryptodome
+psycopg2-binary
+werkzeug
