@@ -184,19 +184,19 @@ input, button {
     width: 300px;
 }
 
-.search-container input {
+.files-section .search-container input {
     width: 100%;
-    padding: 8px 40px 8px 15px;
+    padding: 8px 35px 8px 15px; /* Increased right padding to fit magnifying glass */
     border: 1px solid #ccc;
     border-radius: 20px;
     font-size: 14px;
-    background: transparent; /* Remove white background */
+    outline: none;
 }
 
 .search-container::after {
     content: '🔍';
     position: absolute;
-    right: 15px;
+    right: 15px; /* Position inside the border */
     top: 50%;
     transform: translateY(-50%);
     font-size: 16px;
@@ -242,18 +242,26 @@ td a:hover {
     text-decoration: underline;
 }
 
+.action-links {
+    display: flex;
+    align-items: center;
+    gap: 10px; /* Add spacing between actions */
+}
+
 .action-links a, .action-links button {
-    margin-right: 10px;
-    background: none;
+    background: none !important; /* Remove any background */
     border: none;
     padding: 0;
     color: #3498db;
     cursor: pointer;
     font-size: 14px;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
 }
 
-.action-links a:last-child, .action-links button:last-child {
-    margin-right: 0;
+.action-links a:hover, .action-links button:hover {
+    text-decoration: underline;
 }
 
 /* Links */

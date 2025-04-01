@@ -10,8 +10,13 @@ import base64
 import io
 import uuid
 import datetime
+import logging
 
-app = Flask(__name__)
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(_name_)
+
+app = Flask(_name_)
 app.secret_key = os.environ.get('SECRET_KEY', 'your-random-secret-key-123')
 
 # Flask-Mail Configuration
@@ -74,15 +79,14 @@ def derive_key(keyword):
     return hasher.digest()
 
 def generate_encrypted_key(file_id, keyword):
-    # Use file_id and keyword to create a deterministic key
+    # Normalize keyword: trim and lowercase
+    keyword = keyword.strip().lower()
+    # Use a deterministic hash of file_id and keyword
     hasher = SHA256.new()
     hasher.update(f"{file_id}:{keyword}".encode('utf-8'))
-    key = hasher.digest()
-    cipher = AES.new(key, AES.MODE_EAX)
-    nonce = cipher.nonce
-    # Encrypt a fixed string to ensure consistency
-    ciphertext, tag = cipher.encrypt_and_digest(b"securecloud-fixed-data")
-    return base64.b64encode(ciphertext).decode('utf-8')
+    encrypted_key = base64.b64encode(hasher.digest()).decode('utf-8')
+    logger.debug(f"Generated encrypted key for file_id {file_id} with keyword {keyword}: {encrypted_key}")
+    return encrypted_key
 
 # Routes
 @app.route('/')
@@ -107,7 +111,8 @@ def search_keyword():
     if 'user_id' not in session:
         return redirect(url_for('login'))
     if request.method == 'POST':
-        keyword = request.form['keyword']
+        keyword = request.form['keyword'].strip().lower()  # Normalize keyword
+        logger.debug(f"Search keyword: {keyword}")
         conn = get_db_connection()
         c = conn.cursor()
         c.execute("SELECT id, manual_filename, keyword FROM files WHERE user_id = %s AND keyword = %s",
@@ -115,7 +120,7 @@ def search_keyword():
         files = c.fetchall()
         matching_files = []
         for file in files:
-            encrypted_key = generate_encrypted_key(file[0], keyword)
+            encrypted_key = generate_encrypted_key(file[0], file[2])
             matching_files.append({'id': file[0], 'manual_filename': file[1], 'encrypted_key': encrypted_key})
         conn.close()
         if matching_files:
@@ -245,7 +250,7 @@ def upload():
     if request.method == 'POST':
         file = request.files['file']
         manual_filename = request.form['manual_filename']
-        keyword = request.form['keyword']
+        keyword = request.form['keyword'].strip().lower()  # Normalize keyword
         if not file or not manual_filename or not keyword:
             flash('All fields are required.', 'danger')
             return redirect(url_for('upload'))
@@ -295,6 +300,9 @@ def download(file_id):
     if request.method == 'POST':
         encrypted_key_input = request.form['encrypted_key']
         expected_encrypted_key = generate_encrypted_key(file_id, file[6])
+        logger.debug(f"Download file_id {file_id}, keyword: {file[6]}")
+        logger.debug(f"Input encrypted key: {encrypted_key_input}")
+        logger.debug(f"Expected encrypted key: {expected_encrypted_key}")
         if encrypted_key_input != expected_encrypted_key:
             flash('Invalid encrypted key.', 'danger')
             conn.close()
@@ -384,7 +392,6 @@ def access_shared_file(token):
     c = conn.cursor()
     c.execute("SELECT id, shared_with FROM files WHERE share_token = %s", (token,))
     file = c.fetchone()
-    if not file那么: true
     if not file or file[1] != session['user_id']:
         flash('Invalid share link or no access.', 'danger')
         conn.close()
@@ -399,7 +406,7 @@ def logout():
     flash('Logged out successfully.', 'success')
     return redirect(url_for('login'))
 
-if __name__ == '__main__':
+if _name_ == '_main_':
     try:
         init_db()
         port = int(os.environ.get('PORT', 5000))
