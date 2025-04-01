@@ -22,6 +22,9 @@ h1 {
 h2 {
     color: #2c3e50;
     font-weight: 500;
+    margin: 0;
+    padding: 10px 15px;
+    border-bottom: 1px solid #ddd;
 }
 
 .success { color: #27ae60; }
@@ -35,6 +38,9 @@ h2 {
     position: sticky;
     top: 0;
     z-index: 1000;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 
 .dashboard ul {
@@ -44,6 +50,7 @@ h2 {
     display: flex;
     justify-content: center;
     align-items: center;
+    flex-grow: 1;
 }
 
 .dashboard li {
@@ -65,44 +72,10 @@ h2 {
     color: #fff;
 }
 
-/* Submenu for Search */
-.dashboard .submenu {
-    display: none;
-    position: absolute;
-    top: 100%;
-    left: 0;
-    background: #34495e;
-    border-radius: 5px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-}
-
-.dashboard li:hover .submenu {
-    display: block;
-}
-
-.submenu a {
-    display: block;
-    padding: 10px;
-    color: #ecf0f1;
-}
-
-.submenu a:hover {
-    background: #2980b9;
-}
-
 /* Profile Icon and Panel */
 .profile-container {
-    position: fixed;
-    top: 10px;
-    right: -300px; /* Initially hidden */
-    transition: right 0.3s ease;
-    z-index: 1001;
-    display: flex;
-    align-items: center;
-}
-
-.profile-container.open {
-    right: 0;
+    position: relative;
+    margin-right: 20px;
 }
 
 .profile-icon {
@@ -125,11 +98,20 @@ h2 {
 }
 
 .profile-panel {
+    position: fixed;
+    top: 0;
+    right: -300px;
     width: 300px;
     height: 100vh;
     background: #fff;
     box-shadow: -2px 0 10px rgba(0,0,0,0.2);
+    transition: right 0.3s ease;
     padding: 20px;
+    z-index: 1000;
+}
+
+.profile-panel.open {
+    right: 0;
 }
 
 .profile-panel h2 {
@@ -170,33 +152,43 @@ input, button {
     font-size: 16px;
 }
 
-/* Professional Search Bar */
+/* Files Section with Integrated Search */
+.files-section {
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    margin: 20px 0;
+    border: 1px solid #ddd;
+}
+
+.files-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 15px;
+    border-bottom: 1px solid #ddd;
+}
+
 .search-container {
     position: relative;
-    max-width: 500px;
-    margin: 20px auto;
+    width: 300px;
 }
 
 .search-container input {
-    padding-left: 40px;
+    width: 100%;
+    padding: 8px 40px 8px 15px;
     border: 1px solid #ccc;
-    border-radius: 25px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-    transition: box-shadow 0.3s;
+    border-radius: 20px;
+    font-size: 14px;
 }
 
-.search-container input:focus {
-    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-    outline: none;
-}
-
-.search-container::before {
+.search-container::after {
     content: '🔍';
     position: absolute;
-    left: 15px;
+    right: 15px;
     top: 50%;
     transform: translateY(-50%);
-    font-size: 18px;
+    font-size: 16px;
     color: #666;
 }
 
@@ -216,11 +208,6 @@ button:hover {
 table {
     width: 100%;
     border-collapse: collapse;
-    background: #fff;
-    border-radius: 10px;
-    overflow: hidden;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-    margin: 20px 0;
 }
 
 th, td {
@@ -244,11 +231,12 @@ td a:hover {
     text-decoration: underline;
 }
 
-.share-icon, .delete-icon {
-    font-size: 20px;
-    cursor: pointer;
+.action-links a {
     margin-right: 10px;
-    color: #3498db;
+}
+
+.action-links a:last-child {
+    margin-right: 0;
 }
 
 /* Links */

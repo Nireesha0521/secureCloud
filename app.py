@@ -44,7 +44,7 @@ def init_db():
             encrypted_data TEXT NOT NULL,
             nonce TEXT NOT NULL,
             tag TEXT NOT NULL,
-            keyword TEXT NOT NULL,  -- Changed to plaintext keyword
+            keyword TEXT NOT NULL,
             upload_date TIMESTAMP NOT NULL,
             shared_with INTEGER REFERENCES users(id),
             share_token VARCHAR(100)
@@ -74,16 +74,16 @@ def derive_key(keyword):
     return hasher.digest()
 
 def generate_encrypted_key(file_id, encrypted_data):
-    key = derive_key(str(file_id))  # Use file_id as a unique seed
+    key = derive_key(str(file_id))
     cipher = AES.new(key, AES.MODE_EAX)
     nonce = cipher.nonce
-    ciphertext, tag = cipher.encrypt_and_digest(encrypted_data[:16])  # Encrypt a small portion for key
+    ciphertext, tag = cipher.encrypt_and_digest(encrypted_data[:16])
     return base64.b64encode(ciphertext).decode('utf-8')
 
 # Routes
 @app.route('/')
 def index():
-    return redirect(url_for('login'))  # Always redirect to login
+    return redirect(url_for('login'))
 
 @app.route('/search_filename', methods=['POST'])
 def search_filename():
@@ -222,6 +222,18 @@ def dashboard():
     conn.close()
     return render_template('dashboard.html', files=files)
 
+@app.route('/download')
+def download_list():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT id, manual_filename, keyword, upload_date FROM files WHERE user_id = %s OR shared_with = %s",
+              (session['user_id'], session['user_id']))
+    files = c.fetchall()
+    conn.close()
+    return render_template('download_list.html', files=files)
+
 @app.route('/profile')
 def profile():
     if 'user_id' not in session:
@@ -288,7 +300,7 @@ def download(file_id):
     if not file or (file[4] != session['user_id'] and file[5] != session['user_id']):
         flash('File not found or no access.', 'danger')
         conn.close()
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('download_list'))
     if request.method == 'POST':
         encrypted_key_input = request.form['encrypted_key']
         expected_encrypted_key = generate_encrypted_key(file_id, base64.b64decode(file[1]))
@@ -299,15 +311,20 @@ def download(file_id):
         encrypted_data = base64.b64decode(file[1])
         nonce = base64.b64decode(file[2])
         tag = base64.b64decode(file[3])
-        key = derive_key(file[6])  # Use original keyword
+        key = derive_key(file[6])
         cipher = AES.new(key, AES.MODE_EAX, nonce=nonce)
         decrypted_data = io.BytesIO()
-        chunk_size = 1024 * 1024  # 1MB chunks
+        chunk_size = 1024 * 1024
         for i in range(0, len(encrypted_data), chunk_size):
             chunk = encrypted_data[i:i + chunk_size]
             decrypted_chunk = cipher.decrypt(chunk)
             decrypted_data.write(decrypted_chunk)
-        cipher.verify(tag)
+        try:
+            cipher.verify(tag)
+        except ValueError as e:
+            flash('Decryption failed: Invalid tag. The keyword might be incorrect.', 'danger')
+            conn.close()
+            return redirect(url_for('download', file_id=file_id))
         decrypted_data.seek(0)
         conn.close()
         return send_file(decrypted_data, download_name=file[7], as_attachment=True)
@@ -339,7 +356,7 @@ def share(file_id):
                   (recipient[0], share_token, file_id))
         conn.commit()
         share_link = url_for('access_shared_file', token=share_token, _external=True)
-        keyword = file[1]  # Send original keyword
+        keyword = file[1]
         msg = Message('File Shared with You', sender=app.config['MAIL_USERNAME'], recipients=[email])
         msg.body = f'A file has been shared with you: {share_link}\nKeyword: {keyword}\nSearch with this keyword to get the encrypted key for download.'
         mail.send(msg)
