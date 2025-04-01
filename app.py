@@ -44,8 +44,7 @@ def init_db():
             encrypted_data TEXT NOT NULL,
             nonce TEXT NOT NULL,
             tag TEXT NOT NULL,
-            encrypted_keyword TEXT NOT NULL,
-            metadata TEXT NOT NULL,
+            keyword TEXT NOT NULL,  -- Changed to plaintext keyword
             upload_date TIMESTAMP NOT NULL,
             shared_with INTEGER REFERENCES users(id),
             share_token VARCHAR(100)
@@ -74,30 +73,17 @@ def derive_key(keyword):
     hasher.update(keyword.encode('utf-8'))
     return hasher.digest()
 
-def encrypt_keyword(keyword):
-    key = derive_key(app.secret_key)
+def generate_encrypted_key(file_id, encrypted_data):
+    key = derive_key(str(file_id))  # Use file_id as a unique seed
     cipher = AES.new(key, AES.MODE_EAX)
     nonce = cipher.nonce
-    ciphertext, tag = cipher.encrypt_and_digest(keyword.encode('utf-8'))
-    return (base64.b64encode(ciphertext).decode('utf-8'),
-            base64.b64encode(nonce).decode('utf-8'),
-            base64.b64encode(tag).decode('utf-8'))
-
-def decrypt_keyword(encrypted_keyword, nonce, tag):
-    key = derive_key(app.secret_key)
-    encrypted_keyword = base64.b64decode(encrypted_keyword)
-    nonce = base64.b64decode(nonce)
-    tag = base64.b64decode(tag)
-    cipher = AES.new(key, AES.MODE_EAX, nonce=nonce)
-    decrypted_keyword = cipher.decrypt_and_verify(encrypted_keyword, tag)
-    return decrypted_keyword.decode('utf-8')
+    ciphertext, tag = cipher.encrypt_and_digest(encrypted_data[:16])  # Encrypt a small portion for key
+    return base64.b64encode(ciphertext).decode('utf-8')
 
 # Routes
 @app.route('/')
 def index():
-    if 'user_id' in session:
-        return redirect(url_for('dashboard'))
-    return redirect(url_for('login'))
+    return redirect(url_for('login'))  # Always redirect to login
 
 @app.route('/search_filename', methods=['POST'])
 def search_filename():
@@ -106,8 +92,8 @@ def search_filename():
     search_term = request.form['search_term']
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute("SELECT id, manual_filename, encrypted_keyword, metadata FROM files WHERE user_id = %s AND (manual_filename ILIKE %s OR encrypted_keyword ILIKE %s OR metadata ILIKE %s)",
-              (session['user_id'], f'%{search_term}%', f'%{search_term}%', f'%{search_term}%'))
+    c.execute("SELECT id, manual_filename, keyword, upload_date FROM files WHERE user_id = %s AND (manual_filename ILIKE %s OR keyword ILIKE %s)",
+              (session['user_id'], f'%{search_term}%', f'%{search_term}%'))
     files = c.fetchall()
     conn.close()
     return render_template('dashboard.html', files=files, search_term=search_term)
@@ -121,50 +107,20 @@ def search_keyword():
         key = derive_key(keyword)
         conn = get_db_connection()
         c = conn.cursor()
-        c.execute("SELECT id, manual_filename, encrypted_data, nonce, tag, encrypted_keyword FROM files WHERE user_id = %s",
-                  (session['user_id'],))
+        c.execute("SELECT id, manual_filename, encrypted_data, nonce, tag, keyword FROM files WHERE user_id = %s AND keyword = %s",
+                  (session['user_id'], keyword))
         files = c.fetchall()
         matching_files = []
         for file in files:
-            try:
-                encrypted_data = base64.b64decode(file[2])
-                nonce = base64.b64decode(file[3])
-                tag = base64.b64decode(file[4])
-                cipher = AES.new(key, AES.MODE_EAX, nonce=nonce)
-                cipher.decrypt_and_verify(encrypted_data, tag)
-                matching_files.append({'id': file[0], 'manual_filename': file[1], 'encrypted_keyword': file[5]})
-            except:
-                continue
+            encrypted_key = generate_encrypted_key(file[0], base64.b64decode(file[2]))
+            matching_files.append({'id': file[0], 'manual_filename': file[1], 'encrypted_key': encrypted_key})
         conn.close()
         if matching_files:
-            flash(f'Found {len(matching_files)} file(s). Copy the encrypted keyword to download.', 'success')
+            flash(f'Found {len(matching_files)} file(s). Copy the encrypted key to download.', 'success')
         else:
             flash(f'No files found with keyword "{keyword}".', 'danger')
         return render_template('search_keyword.html', files=matching_files)
     return render_template('search_keyword.html', files=None)
-
-@app.route('/decrypt_keyword/<int:file_id>', methods=['GET', 'POST'])
-def decrypt_keyword_route(file_id):
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute("SELECT manual_filename, encrypted_keyword, nonce, tag, user_id, shared_with FROM files WHERE id = %s",
-              (file_id,))
-    file = c.fetchone()
-    if not file or (file[4] != session['user_id'] and file[5] != session['user_id']):
-        flash('File not found or you do not have access.', 'danger')
-        conn.close()
-        return redirect(url_for('dashboard'))
-    if request.method == 'POST':
-        try:
-            decrypted_keyword = decrypt_keyword(file[1], file[2], file[3])
-            flash(f'The keyword for "{file[0]}" is: {decrypted_keyword}', 'success')
-        except Exception as e:
-            flash(f'Failed to decrypt keyword: {e}', 'danger')
-        return redirect(url_for('dashboard'))
-    conn.close()
-    return render_template('decrypt_keyword.html', file_id=file_id, manual_filename=file[0])
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -260,7 +216,7 @@ def dashboard():
         return redirect(url_for('login'))
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute("SELECT id, manual_filename, encrypted_keyword, metadata FROM files WHERE user_id = %s OR shared_with = %s",
+    c.execute("SELECT id, manual_filename, keyword, upload_date FROM files WHERE user_id = %s OR shared_with = %s",
               (session['user_id'], session['user_id']))
     files = c.fetchall()
     conn.close()
@@ -310,12 +266,10 @@ def upload():
         encrypted_data_b64 = base64.b64encode(encrypted_data.read()).decode('utf-8')
         nonce_b64 = base64.b64encode(nonce).decode('utf-8')
         tag_b64 = base64.b64encode(tag).decode('utf-8')
-        encrypted_keyword_data, keyword_nonce, keyword_tag = encrypt_keyword(keyword)
-        metadata = f"Original Filename: {original_filename}, Size: {file_size} bytes, Uploaded: {upload_date}"
         conn = get_db_connection()
         c = conn.cursor()
-        c.execute("INSERT INTO files (user_id, filename, manual_filename, encrypted_data, nonce, tag, encrypted_keyword, metadata, upload_date) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                  (session['user_id'], original_filename, manual_filename, encrypted_data_b64, nonce_b64, tag_b64, encrypted_keyword_data, metadata, upload_date))
+        c.execute("INSERT INTO files (user_id, filename, manual_filename, encrypted_data, nonce, tag, keyword, upload_date) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                  (session['user_id'], original_filename, manual_filename, encrypted_data_b64, nonce_b64, tag_b64, keyword, upload_date))
         conn.commit()
         conn.close()
         flash('File uploaded successfully!', 'success')
@@ -328,7 +282,7 @@ def download(file_id):
         return redirect(url_for('login'))
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute("SELECT manual_filename, encrypted_data, nonce, tag, user_id, shared_with, encrypted_keyword, filename FROM files WHERE id = %s",
+    c.execute("SELECT manual_filename, encrypted_data, nonce, tag, user_id, shared_with, keyword, filename FROM files WHERE id = %s",
               (file_id,))
     file = c.fetchone()
     if not file or (file[4] != session['user_id'] and file[5] != session['user_id']):
@@ -336,16 +290,16 @@ def download(file_id):
         conn.close()
         return redirect(url_for('dashboard'))
     if request.method == 'POST':
-        encrypted_keyword_input = request.form['encrypted_keyword']
-        if encrypted_keyword_input != file[6]:
-            flash('Invalid encrypted keyword.', 'danger')
+        encrypted_key_input = request.form['encrypted_key']
+        expected_encrypted_key = generate_encrypted_key(file_id, base64.b64decode(file[1]))
+        if encrypted_key_input != expected_encrypted_key:
+            flash('Invalid encrypted key.', 'danger')
             conn.close()
             return redirect(url_for('download', file_id=file_id))
         encrypted_data = base64.b64decode(file[1])
         nonce = base64.b64decode(file[2])
         tag = base64.b64decode(file[3])
-        keyword = decrypt_keyword(file[6], base64.b64decode(file[2]), base64.b64decode(file[3]))  # Using stored nonce and tag
-        key = derive_key(keyword)
+        key = derive_key(file[6])  # Use original keyword
         cipher = AES.new(key, AES.MODE_EAX, nonce=nonce)
         decrypted_data = io.BytesIO()
         chunk_size = 1024 * 1024  # 1MB chunks
@@ -366,7 +320,7 @@ def share(file_id):
         return redirect(url_for('login'))
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute("SELECT user_id, encrypted_keyword FROM files WHERE id = %s", (file_id,))
+    c.execute("SELECT user_id, keyword FROM files WHERE id = %s", (file_id,))
     file = c.fetchone()
     if not file or file[0] != session['user_id']:
         flash('File not found or no permission.', 'danger')
@@ -385,15 +339,33 @@ def share(file_id):
                   (recipient[0], share_token, file_id))
         conn.commit()
         share_link = url_for('access_shared_file', token=share_token, _external=True)
-        encrypted_keyword = file[1]  # Fetch the encrypted keyword
+        keyword = file[1]  # Send original keyword
         msg = Message('File Shared with You', sender=app.config['MAIL_USERNAME'], recipients=[email])
-        msg.body = f'A file has been shared with you: {share_link}\nEncrypted Keyword: {encrypted_keyword}\nUse this keyword on the download page to access the file.'
+        msg.body = f'A file has been shared with you: {share_link}\nKeyword: {keyword}\nSearch with this keyword to get the encrypted key for download.'
         mail.send(msg)
-        flash('File shared successfully! Encrypted keyword sent to recipient.', 'success')
+        flash('File shared successfully! Keyword sent to recipient.', 'success')
         conn.close()
         return redirect(url_for('dashboard'))
     conn.close()
     return render_template('share.html', file_id=file_id)
+
+@app.route('/delete/<int:file_id>', methods=['POST'])
+def delete(file_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT user_id FROM files WHERE id = %s", (file_id,))
+    file = c.fetchone()
+    if not file or file[0] != session['user_id']:
+        flash('File not found or no permission.', 'danger')
+        conn.close()
+        return redirect(url_for('dashboard'))
+    c.execute("DELETE FROM files WHERE id = %s AND user_id = %s", (file_id, session['user_id']))
+    conn.commit()
+    conn.close()
+    flash('File deleted successfully!', 'success')
+    return redirect(url_for('dashboard'))
 
 @app.route('/shared/<token>')
 def access_shared_file(token):
