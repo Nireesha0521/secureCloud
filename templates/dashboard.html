@@ -3,8 +3,27 @@
 <head>
     <title>Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
+    <div class="dashboard">
+        <ul>
+            <li><a href="{{ url_for('upload') }}">Upload</a></li>
+            <li>
+                <a href="#">Search</a>
+                <div class="submenu">
+                    <a href="{{ url_for('search_filename') }}">File Search</a>
+                    <a href="{{ url_for('search_keyword') }}">Encrypt Keyword</a>
+                </div>
+            </li>
+            <li><a href="{{ url_for('dashboard') }}">Download File</a></li>
+        </ul>
+        <div class="profile-icon" onclick="toggleProfile()">{{ session['username'][0]|upper }}</div>
+        <div class="profile-panel" id="profilePanel">
+            <h2>Profile</h2>
+            <p>Loading...</p>
+        </div>
+    </div>
     <div class="container">
         <h1>Dashboard</h1>
         {% with messages = get_flashed_messages(with_categories=true) %}
@@ -22,5 +41,16 @@
             {% endfor %}
         </ul>
     </div>
+    <script>
+        function toggleProfile() {
+            const panel = document.getElementById('profilePanel');
+            panel.classList.toggle('open');
+            if (panel.classList.contains('open')) {
+                fetch('{{ url_for('profile') }}').then(response => response.text()).then(html => {
+                    panel.innerHTML = html;
+                });
+            }
+        }
+    </script>
 </body>
 </html>

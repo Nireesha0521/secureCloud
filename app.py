@@ -80,7 +80,7 @@ def encrypt_keyword(keyword):
     nonce = cipher.nonce
     ciphertext, tag = cipher.encrypt_and_digest(keyword.encode('utf-8'))
     return (base64.b64encode(ciphertext).decode('utf-8'),
-            base64.b64encode(nonce).decode('utf-_pdata8'),
+            base64.b64encode(nonce).decode('utf-8'),  # Fixed: 'utf-8'
             base64.b64encode(tag).decode('utf-8'))
 
 def decrypt_keyword(encrypted_keyword, nonce, tag):
@@ -322,7 +322,7 @@ def upload():
         nonce = cipher.nonce
         ciphertext, tag = cipher.encrypt_and_digest(file_data)
         encrypted_data_b64 = base64.b64encode(ciphertext).decode('utf-8')
-        nonce_b64 = base64.b64encode(nonce).decode('utf-8')
+        nonce_b64 = base64.b64encode(nonce).decode('utf-8')  # Fixed: 'utf-8'
         tag_b64 = base64.b64encode(tag).decode('utf-8')
         encrypted_keyword, keyword_nonce, keyword_tag = encrypt_keyword(keyword)
         conn = get_db_connection()

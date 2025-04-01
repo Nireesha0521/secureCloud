@@ -1,14 +1,35 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>SecureCloud - Home</title>
+    <title>SecureCloud</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="container">
-        <h1>SecureCloud - Home</h1>
+    <div class="dashboard">
+        <ul>
+            <li><a href="{{ url_for('upload') }}">Upload</a></li>
+            <li>
+                <a href="#">Search</a>
+                <div class="submenu">
+                    <a href="{{ url_for('search_filename') }}">File Search</a>
+                    <a href="{{ url_for('search_keyword') }}">Encrypt Keyword</a>
+                </div>
+            </li>
+            <li><a href="{{ url_for('dashboard') }}">Download File</a></li>
+        </ul>
         {% if 'user_id' in session %}
-            <p>Welcome, {{ session['username'] }} | <a href="{{ url_for('dashboard') }}">Dashboard</a></p>
+            <div class="profile-icon" onclick="toggleProfile()">{{ session['username'][0]|upper }}</div>
+            <div class="profile-panel" id="profilePanel">
+                <h2>Profile</h2>
+                <p>Loading...</p>
+            </div>
+        {% endif %}
+    </div>
+    <div class="container">
+        <h1>SecureCloud</h1>
+        {% if 'user_id' in session %}
+            <p>Welcome, {{ session['username'] }}</p>
         {% else %}
             <p><a href="{{ url_for('login') }}">Login</a> | <a href="{{ url_for('register') }}">Register</a></p>
         {% endif %}
@@ -16,28 +37,19 @@
             <input type="text" name="search_term" placeholder="Search by manual filename" value="{{ search_term or '' }}">
             <button type="submit">Search</button>
         </form>
-        <h2>All Uploaded Files</h2>
+        <h2>Upload History</h2>
         {% if files %}
             <table>
                 <tr>
-                    <th>Manual Filename</th>
-                    <th>Uploader</th>
-                    <th>Encrypted Keyword</th>
-                    <th>Upload Date</th>
-                    <th>Actions</th>
+                    <th>Filename</th>
+                    <th>Keyword (Encrypted)</th>
+                    <th>Date & Time</th>
                 </tr>
                 {% for file in files %}
                     <tr>
                         <td>{{ file.manual_filename }}</td>
-                        <td>{{ file.uploader }}</td>
                         <td>{{ file.encrypted_keyword }}</td>
                         <td>{{ file.upload_date }}</td>
-                        <td>
-                            <a href="{{ url_for('download', file_id=file.id) }}">Download</a>
-                            {% if 'user_id' in session and (file.uploader == session['username'] or file.id in session.get('shared_files', [])) %}
-                                | <a href="{{ url_for('decrypt_keyword_route', file_id=file.id) }}">Decrypt Keyword</a>
-                            {% endif %}
-                        </td>
                     </tr>
                 {% endfor %}
             </table>
@@ -45,13 +57,6 @@
             <p>No files uploaded yet.</p>
         {% endif %}
     </div>
-    <div class="profile-icon" onclick="toggleProfile()">{{ session['username'][0]|upper if 'username' in session else 'U' }}</div>
-    {% if 'user_id' in session %}
-        <div class="profile-panel" id="profilePanel">
-            <h2>Profile</h2>
-            <p>Loading...</p>
-        </div>
-    {% endif %}
     <script>
         function toggleProfile() {
             const panel = document.getElementById('profilePanel');
