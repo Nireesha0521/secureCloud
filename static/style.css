@@ -91,6 +91,8 @@ h2 {
     font-weight: 600;
     cursor: pointer;
     transition: transform 0.3s;
+    position: relative;
+    z-index: 1001;
 }
 
 .profile-icon:hover {
@@ -100,18 +102,26 @@ h2 {
 .profile-panel {
     position: fixed;
     top: 0;
-    right: -300px;
+    right: -300px; /* Start completely off-screen */
     width: 300px;
     height: 100vh;
     background: #fff;
     box-shadow: -2px 0 10px rgba(0,0,0,0.2);
     transition: right 0.3s ease;
-    padding: 20px;
+    padding: 60px 20px 20px 20px; /* Add padding-top to account for icon */
     z-index: 1000;
+    visibility: hidden; /* Hide completely when closed */
 }
 
 .profile-panel.open {
     right: 0;
+    visibility: visible; /* Show when open */
+}
+
+.profile-icon.open {
+    position: fixed;
+    top: 15px;
+    right: 130px; /* Center the icon on the panel */
 }
 
 .profile-panel h2 {
@@ -180,6 +190,7 @@ input, button {
     border: 1px solid #ccc;
     border-radius: 20px;
     font-size: 14px;
+    background: transparent; /* Remove white background */
 }
 
 .search-container::after {
@@ -231,11 +242,17 @@ td a:hover {
     text-decoration: underline;
 }
 
-.action-links a {
+.action-links a, .action-links button {
     margin-right: 10px;
+    background: none;
+    border: none;
+    padding: 0;
+    color: #3498db;
+    cursor: pointer;
+    font-size: 14px;
 }
 
-.action-links a:last-child {
+.action-links a:last-child, .action-links button:last-child {
     margin-right: 0;
 }
 

@@ -11,7 +11,7 @@ import io
 import uuid
 import datetime
 
-app = Flask(__name__)
+app = Flask(_name_)
 app.secret_key = os.environ.get('SECRET_KEY', 'your-random-secret-key-123')
 
 # Flask-Mail Configuration
@@ -73,11 +73,15 @@ def derive_key(keyword):
     hasher.update(keyword.encode('utf-8'))
     return hasher.digest()
 
-def generate_encrypted_key(file_id, encrypted_data):
-    key = derive_key(str(file_id))
+def generate_encrypted_key(file_id, keyword):
+    # Use file_id and keyword to create a deterministic key
+    hasher = SHA256.new()
+    hasher.update(f"{file_id}:{keyword}".encode('utf-8'))
+    key = hasher.digest()
     cipher = AES.new(key, AES.MODE_EAX)
     nonce = cipher.nonce
-    ciphertext, tag = cipher.encrypt_and_digest(encrypted_data[:16])
+    # Encrypt a fixed string to ensure consistency
+    ciphertext, tag = cipher.encrypt_and_digest(b"securecloud-fixed-data")
     return base64.b64encode(ciphertext).decode('utf-8')
 
 # Routes
@@ -104,15 +108,14 @@ def search_keyword():
         return redirect(url_for('login'))
     if request.method == 'POST':
         keyword = request.form['keyword']
-        key = derive_key(keyword)
         conn = get_db_connection()
         c = conn.cursor()
-        c.execute("SELECT id, manual_filename, encrypted_data, nonce, tag, keyword FROM files WHERE user_id = %s AND keyword = %s",
+        c.execute("SELECT id, manual_filename, keyword FROM files WHERE user_id = %s AND keyword = %s",
                   (session['user_id'], keyword))
         files = c.fetchall()
         matching_files = []
         for file in files:
-            encrypted_key = generate_encrypted_key(file[0], base64.b64decode(file[2]))
+            encrypted_key = generate_encrypted_key(file[0], keyword)
             matching_files.append({'id': file[0], 'manual_filename': file[1], 'encrypted_key': encrypted_key})
         conn.close()
         if matching_files:
@@ -222,18 +225,6 @@ def dashboard():
     conn.close()
     return render_template('dashboard.html', files=files)
 
-@app.route('/download')
-def download_list():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute("SELECT id, manual_filename, keyword, upload_date FROM files WHERE user_id = %s OR shared_with = %s",
-              (session['user_id'], session['user_id']))
-    files = c.fetchall()
-    conn.close()
-    return render_template('download_list.html', files=files)
-
 @app.route('/profile')
 def profile():
     if 'user_id' not in session:
@@ -300,10 +291,10 @@ def download(file_id):
     if not file or (file[4] != session['user_id'] and file[5] != session['user_id']):
         flash('File not found or no access.', 'danger')
         conn.close()
-        return redirect(url_for('download_list'))
+        return redirect(url_for('search_keyword'))
     if request.method == 'POST':
         encrypted_key_input = request.form['encrypted_key']
-        expected_encrypted_key = generate_encrypted_key(file_id, base64.b64decode(file[1]))
+        expected_encrypted_key = generate_encrypted_key(file_id, file[6])
         if encrypted_key_input != expected_encrypted_key:
             flash('Invalid encrypted key.', 'danger')
             conn.close()
@@ -393,6 +384,7 @@ def access_shared_file(token):
     c = conn.cursor()
     c.execute("SELECT id, shared_with FROM files WHERE share_token = %s", (token,))
     file = c.fetchone()
+    if not file那么: true
     if not file or file[1] != session['user_id']:
         flash('Invalid share link or no access.', 'danger')
         conn.close()
@@ -407,7 +399,7 @@ def logout():
     flash('Logged out successfully.', 'success')
     return redirect(url_for('login'))
 
-if __name__ == '__main__':
+if _name_ == '_main_':
     try:
         init_db()
         port = int(os.environ.get('PORT', 5000))

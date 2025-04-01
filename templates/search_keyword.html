@@ -11,10 +11,10 @@
             <li><a href="{{ url_for('dashboard') }}">Home</a></li>
             <li><a href="{{ url_for('upload') }}">Upload</a></li>
             <li><a href="{{ url_for('search_keyword') }}">Search</a></li>
-            <li><a href="{{ url_for('download_list') }}">Download File</a></li>
+            <li><a href="{{ url_for('search_keyword') }}">Download File</a></li>
         </ul>
         <div class="profile-container">
-            <div class="profile-icon" onclick="toggleProfile()">{{ session['username'][0]|upper }}</div>
+            <div class="profile-icon" id="profileIcon" onclick="toggleProfile()">{{ session['username'][0]|upper }}</div>
             <div class="profile-panel" id="profilePanel">
                 <h2>Profile</h2>
                 <p>Loading...</p>
@@ -40,22 +40,25 @@
                 <tr>
                     <th>Filename</th>
                     <th>Encrypted Key (Copy this)</th>
+                    <th>Action</th>
                 </tr>
                 {% for file in files %}
                     <tr>
                         <td>{{ file.manual_filename }}</td>
                         <td>{{ file.encrypted_key }}</td>
+                        <td><a href="{{ url_for('download', file_id=file.id) }}">Download</a></td>
                     </tr>
                 {% endfor %}
             </table>
-            <p>Copy the encrypted key and use it on the <a href="{{ url_for('download_list') }}">Download page</a>.</p>
         {% endif %}
         <p><a href="{{ url_for('dashboard') }}">Back to Dashboard</a></p>
     </div>
     <script>
         function toggleProfile() {
             const panel = document.getElementById('profilePanel');
+            const icon = document.getElementById('profileIcon');
             panel.classList.toggle('open');
+            icon.classList.toggle('open');
             if (panel.classList.contains('open')) {
                 fetch('{{ url_for('profile') }}').then(response => response.text()).then(html => {
                     panel.innerHTML = html;

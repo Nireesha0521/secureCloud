@@ -11,10 +11,10 @@
             <li><a href="{{ url_for('dashboard') }}">Home</a></li>
             <li><a href="{{ url_for('upload') }}">Upload</a></li>
             <li><a href="{{ url_for('search_keyword') }}">Search</a></li>
-            <li><a href="{{ url_for('download_list') }}">Download File</a></li>
+            <li><a href="{{ url_for('search_keyword') }}">Download File</a></li>
         </ul>
         <div class="profile-container">
-            <div class="profile-icon" onclick="toggleProfile()">{{ session['username'][0]|upper }}</div>
+            <div class="profile-icon" id="profileIcon" onclick="toggleProfile()">{{ session['username'][0]|upper }}</div>
             <div class="profile-panel" id="profilePanel">
                 <h2>Profile</h2>
                 <p>Loading...</p>
@@ -39,7 +39,9 @@
     <script>
         function toggleProfile() {
             const panel = document.getElementById('profilePanel');
+            const icon = document.getElementById('profileIcon');
             panel.classList.toggle('open');
+            icon.classList.toggle('open');
             if (panel.classList.contains('open')) {
                 fetch('{{ url_for('profile') }}').then(response => response.text()).then(html => {
                     panel.innerHTML = html;
