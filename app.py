@@ -11,7 +11,7 @@ import io
 import uuid
 import datetime
 
-app = Flask(__name__)
+app = Flask(_name_)
 app.secret_key = os.environ.get('SECRET_KEY', 'your-random-secret-key-123')
 
 # Flask-Mail Configuration
@@ -80,7 +80,7 @@ def encrypt_keyword(keyword):
     nonce = cipher.nonce
     ciphertext, tag = cipher.encrypt_and_digest(keyword.encode('utf-8'))
     return (base64.b64encode(ciphertext).decode('utf-8'),
-            base64.b64encode(nonce).decode('utf-8'),  # Fixed: 'utf-8'
+            base64.b64encode(nonce).decode('utf-8'),
             base64.b64encode(tag).decode('utf-8'))
 
 def decrypt_keyword(encrypted_keyword, nonce, tag):
@@ -95,56 +95,34 @@ def decrypt_keyword(encrypted_keyword, nonce, tag):
 # Routes
 @app.route('/')
 def index():
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute("SELECT id, manual_filename, user_id, encrypted_keyword, nonce, tag, upload_date FROM files")
-    files = c.fetchall()
-    file_list = []
-    for file in files:
-        c.execute("SELECT username FROM users WHERE id = %s", (file[2],))
-        username = c.fetchone()
-        file_list.append({
-            'id': file[0],
-            'manual_filename': file[1],
-            'uploader': username[0] if username else "Unknown",
-            'encrypted_keyword': file[3],
-            'nonce': file[4],
-            'tag': file[5],
-            'upload_date': file[6]
-        })
-    conn.close()
-    return render_template('index.html', files=file_list)
+    if 'user_id' in session:
+        return redirect(url_for('dashboard'))
+    return redirect(url_for('login'))
 
 @app.route('/search_filename', methods=['POST'])
 def search_filename():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
     search_term = request.form['search_term']
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute("SELECT id, manual_filename, user_id, encrypted_keyword, upload_date FROM files WHERE manual_filename ILIKE %s",
-              (f'%{search_term}%',))
+    c.execute("SELECT id, manual_filename, encrypted_keyword, metadata FROM files WHERE user_id = %s AND (manual_filename ILIKE %s OR encrypted_keyword ILIKE %s OR metadata ILIKE %s)",
+              (session['user_id'], f'%{search_term}%', f'%{search_term}%', f'%{search_term}%'))
     files = c.fetchall()
-    file_list = []
-    for file in files:
-        c.execute("SELECT username FROM users WHERE id = %s", (file[2],))
-        username = c.fetchone()
-        file_list.append({
-            'id': file[0],
-            'manual_filename': file[1],
-            'uploader': username[0] if username else "Unknown",
-            'encrypted_keyword': file[3],
-            'upload_date': file[4]
-        })
     conn.close()
-    return render_template('index.html', files=file_list, search_term=search_term)
+    return render_template('dashboard.html', files=files, search_term=search_term)
 
 @app.route('/search_keyword', methods=['GET', 'POST'])
 def search_keyword():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
     if request.method == 'POST':
         keyword = request.form['keyword']
         key = derive_key(keyword)
         conn = get_db_connection()
         c = conn.cursor()
-        c.execute("SELECT id, manual_filename, encrypted_data, nonce, tag FROM files")
+        c.execute("SELECT id, manual_filename, encrypted_data, nonce, tag, encrypted_keyword FROM files WHERE user_id = %s",
+                  (session['user_id'],))
         files = c.fetchall()
         matching_files = []
         for file in files:
@@ -154,15 +132,15 @@ def search_keyword():
                 tag = base64.b64decode(file[4])
                 cipher = AES.new(key, AES.MODE_EAX, nonce=nonce)
                 cipher.decrypt_and_verify(encrypted_data, tag)
-                matching_files.append({'id': file[0], 'manual_filename': file[1]})
+                matching_files.append({'id': file[0], 'manual_filename': file[1], 'encrypted_keyword': file[5]})
             except:
                 continue
         conn.close()
         if matching_files:
-            flash(f'Found {len(matching_files)} file(s) encrypted with keyword "{keyword}".', 'success')
+            flash(f'Found {len(matching_files)} file(s). Copy the encrypted keyword to download.', 'success')
         else:
             flash(f'No files found with keyword "{keyword}".', 'danger')
-        return render_template('search_keyword.html', files=matching_files, keyword=keyword)
+        return render_template('search_keyword.html', files=matching_files)
     return render_template('search_keyword.html', files=None)
 
 @app.route('/decrypt_keyword/<int:file_id>', methods=['GET', 'POST'])
@@ -177,14 +155,14 @@ def decrypt_keyword_route(file_id):
     if not file or (file[4] != session['user_id'] and file[5] != session['user_id']):
         flash('File not found or you do not have access.', 'danger')
         conn.close()
-        return redirect(url_for('index'))
+        return redirect(url_for('dashboard'))
     if request.method == 'POST':
         try:
             decrypted_keyword = decrypt_keyword(file[1], file[2], file[3])
             flash(f'The keyword for "{file[0]}" is: {decrypted_keyword}', 'success')
         except Exception as e:
             flash(f'Failed to decrypt keyword: {e}', 'danger')
-        return redirect(url_for('index'))
+        return redirect(url_for('dashboard'))
     conn.close()
     return render_template('decrypt_keyword.html', file_id=file_id, manual_filename=file[0])
 
@@ -282,7 +260,7 @@ def dashboard():
         return redirect(url_for('login'))
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute("SELECT id, manual_filename FROM files WHERE user_id = %s OR shared_with = %s",
+    c.execute("SELECT id, manual_filename, encrypted_keyword, metadata FROM files WHERE user_id = %s OR shared_with = %s",
               (session['user_id'], session['user_id']))
     files = c.fetchall()
     conn.close()
@@ -312,23 +290,32 @@ def upload():
         if not file or not manual_filename or not keyword:
             flash('All fields are required.', 'danger')
             return redirect(url_for('upload'))
-        file_data = file.read()
         original_filename = file.filename
-        file_size = len(file_data)
+        file_size = 0
         upload_date = datetime.datetime.utcnow()
-        metadata = f"Original Filename: {original_filename}, Size: {file_size} bytes, Uploaded: {upload_date}"
         key = derive_key(keyword)
         cipher = AES.new(key, AES.MODE_EAX)
         nonce = cipher.nonce
-        ciphertext, tag = cipher.encrypt_and_digest(file_data)
-        encrypted_data_b64 = base64.b64encode(ciphertext).decode('utf-8')
-        nonce_b64 = base64.b64encode(nonce).decode('utf-8')  # Fixed: 'utf-8'
+        encrypted_data = io.BytesIO()
+        chunk_size = 1024 * 1024  # 1MB chunks
+        while True:
+            chunk = file.read(chunk_size)
+            if not chunk:
+                break
+            file_size += len(chunk)
+            ciphertext = cipher.encrypt(chunk)
+            encrypted_data.write(ciphertext)
+        tag = cipher.digest()
+        encrypted_data.seek(0)
+        encrypted_data_b64 = base64.b64encode(encrypted_data.read()).decode('utf-8')
+        nonce_b64 = base64.b64encode(nonce).decode('utf-8')
         tag_b64 = base64.b64encode(tag).decode('utf-8')
-        encrypted_keyword, keyword_nonce, keyword_tag = encrypt_keyword(keyword)
+        encrypted_keyword_data, keyword_nonce, keyword_tag = encrypt_keyword(keyword)
+        metadata = f"Original Filename: {original_filename}, Size: {file_size} bytes, Uploaded: {upload_date}"
         conn = get_db_connection()
         c = conn.cursor()
         c.execute("INSERT INTO files (user_id, filename, manual_filename, encrypted_data, nonce, tag, encrypted_keyword, metadata, upload_date) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                  (session['user_id'], original_filename, manual_filename, encrypted_data_b64, nonce_b64, tag_b64, encrypted_keyword, metadata, upload_date))
+                  (session['user_id'], original_filename, manual_filename, encrypted_data_b64, nonce_b64, tag_b64, encrypted_keyword_data, metadata, upload_date))
         conn.commit()
         conn.close()
         flash('File uploaded successfully!', 'success')
@@ -341,7 +328,7 @@ def download(file_id):
         return redirect(url_for('login'))
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute("SELECT manual_filename, encrypted_data, nonce, tag, user_id, shared_with FROM files WHERE id = %s",
+    c.execute("SELECT manual_filename, encrypted_data, nonce, tag, user_id, shared_with, encrypted_keyword, filename FROM files WHERE id = %s",
               (file_id,))
     file = c.fetchone()
     if not file or (file[4] != session['user_id'] and file[5] != session['user_id']):
@@ -349,20 +336,29 @@ def download(file_id):
         conn.close()
         return redirect(url_for('dashboard'))
     if request.method == 'POST':
-        keyword = request.form['keyword']
+        encrypted_keyword_input = request.form['encrypted_keyword']
+        if encrypted_keyword_input != file[6]:
+            flash('Invalid encrypted keyword.', 'danger')
+            conn.close()
+            return redirect(url_for('download', file_id=file_id))
         encrypted_data = base64.b64decode(file[1])
         nonce = base64.b64decode(file[2])
         tag = base64.b64decode(file[3])
+        keyword = decrypt_keyword(file[6], base64.b64decode(file[2]), base64.b64decode(file[3]))  # Using stored nonce and tag
         key = derive_key(keyword)
-        try:
-            cipher = AES.new(key, AES.MODE_EAX, nonce=nonce)
-            decrypted_data = cipher.decrypt_and_verify(encrypted_data, tag)
-            return send_file(io.BytesIO(decrypted_data), download_name=file[0], as_attachment=True)
-        except Exception as e:
-            flash(f'Decryption failed: {e} (wrong keyword?)', 'danger')
-            return redirect(url_for('download', file_id=file_id))
+        cipher = AES.new(key, AES.MODE_EAX, nonce=nonce)
+        decrypted_data = io.BytesIO()
+        chunk_size = 1024 * 1024  # 1MB chunks
+        for i in range(0, len(encrypted_data), chunk_size):
+            chunk = encrypted_data[i:i + chunk_size]
+            decrypted_chunk = cipher.decrypt(chunk)
+            decrypted_data.write(decrypted_chunk)
+        cipher.verify(tag)
+        decrypted_data.seek(0)
+        conn.close()
+        return send_file(decrypted_data, download_name=file[7], as_attachment=True)
     conn.close()
-    return render_template('download.html', file_id=file_id)
+    return render_template('download.html', file_id=file_id, manual_filename=file[0])
 
 @app.route('/share/<int:file_id>', methods=['GET', 'POST'])
 def share(file_id):
@@ -370,7 +366,7 @@ def share(file_id):
         return redirect(url_for('login'))
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute("SELECT user_id FROM files WHERE id = %s", (file_id,))
+    c.execute("SELECT user_id, encrypted_keyword FROM files WHERE id = %s", (file_id,))
     file = c.fetchone()
     if not file or file[0] != session['user_id']:
         flash('File not found or no permission.', 'danger')
@@ -389,10 +385,11 @@ def share(file_id):
                   (recipient[0], share_token, file_id))
         conn.commit()
         share_link = url_for('access_shared_file', token=share_token, _external=True)
+        encrypted_keyword = file[1]  # Fetch the encrypted keyword
         msg = Message('File Shared with You', sender=app.config['MAIL_USERNAME'], recipients=[email])
-        msg.body = f'A file has been shared with you: {share_link}\nYou need the keyword to decrypt it.'
+        msg.body = f'A file has been shared with you: {share_link}\nEncrypted Keyword: {encrypted_keyword}\nUse this keyword on the download page to access the file.'
         mail.send(msg)
-        flash('File shared successfully!', 'success')
+        flash('File shared successfully! Encrypted keyword sent to recipient.', 'success')
         conn.close()
         return redirect(url_for('dashboard'))
     conn.close()
@@ -421,7 +418,7 @@ def logout():
     flash('Logged out successfully.', 'success')
     return redirect(url_for('login'))
 
-if __name__ == '__main__':
+if _name_ == '_main_':
     try:
         init_db()
         port = int(os.environ.get('PORT', 5000))

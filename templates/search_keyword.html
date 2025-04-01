@@ -38,14 +38,22 @@
             <button type="submit">Search</button>
         </form>
         {% if files is not none and files %}
-            <h2>Files Encrypted with "{{ keyword }}"</h2>
-            <ul>
+            <h2>Matching Files</h2>
+            <table>
+                <tr>
+                    <th>Filename</th>
+                    <th>Encrypted Keyword (Copy this)</th>
+                </tr>
                 {% for file in files %}
-                    <li>{{ file.manual_filename }} (<a href="{{ url_for('download', file_id=file.id) }}">Download</a>)</li>
+                    <tr>
+                        <td>{{ file.manual_filename }}</td>
+                        <td>{{ file.encrypted_keyword }}</td>
+                    </tr>
                 {% endfor %}
-            </ul>
+            </table>
+            <p>Copy the encrypted keyword and use it on the <a href="{{ url_for('dashboard') }}">Download page</a>.</p>
         {% endif %}
-        <p><a href="{{ url_for('index') }}">Back to Home</a></p>
+        <p><a href="{{ url_for('dashboard') }}">Back to Dashboard</a></p>
     </div>
     <script>
         function toggleProfile() {

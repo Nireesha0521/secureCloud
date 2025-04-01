@@ -107,6 +107,7 @@ h2 {
     font-weight: 600;
     cursor: pointer;
     transition: transform 0.3s;
+    z-index: 1001; /* Above panel */
 }
 
 .profile-icon:hover {
@@ -123,6 +124,7 @@ h2 {
     box-shadow: -2px 0 10px rgba(0,0,0,0.2);
     transition: right 0.3s ease;
     padding: 20px;
+    z-index: 1000; /* Below icon */
 }
 
 .profile-panel.open {
@@ -209,6 +211,12 @@ td a {
 
 td a:hover {
     text-decoration: underline;
+}
+
+.share-icon {
+    font-size: 20px;
+    cursor: pointer;
+    color: #3498db;
 }
 
 /* Links */
