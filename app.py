@@ -52,7 +52,7 @@ def init_db():
             user_id INTEGER REFERENCES users(id),
             filename VARCHAR(255) NOT NULL,
             manual_filename VARCHAR(255) NOT NULL,
-            file_path TEXT NOT NULL,  -- Changed from encrypted_data to file_path
+            file_path TEXT NOT NULL,
             nonce TEXT NOT NULL,
             tag TEXT NOT NULL,
             keyword TEXT NOT NULL,
@@ -354,7 +354,11 @@ def download(file_id):
                 img_data = base64.b64encode(decrypted_data.read()).decode('utf-8')
                 preview_content = f'<img src="data:image/{file_extension};base64,{img_data}" style="max-width:500px;">'
             elif file_extension == 'pdf':
-                preview_content = '<p>PDF preview not supported yet. Download to view.</p>'
+                pdf_data = base64.b64encode(decrypted_data.read()).decode('utf-8')
+                preview_content = f'<embed src="data:application/pdf;base64,{pdf_data}" type="application/pdf" width="500" height="600">'
+            elif file_extension in ['mp4', 'webm', 'ogg']:
+                video_data = base64.b64encode(decrypted_data.read()).decode('utf-8')
+                preview_content = f'<video controls width="500"><source src="data:video/{file_extension};base64,{video_data}" type="video/{file_extension}">Your browser does not support the video tag.</video>'
             else:
                 preview_content = '<p>Preview not available for this file type.</p>'
             conn.close()
@@ -410,7 +414,6 @@ def delete(file_id):
         flash('File not found or no permission.', 'danger')
         conn.close()
         return redirect(url_for('dashboard'))
-    # Delete the file from filesystem
     if os.path.exists(file[1]):
         os.remove(file[1])
     c.execute("DELETE FROM files WHERE id = %s AND user_id = %s", (file_id, session['user_id']))

@@ -52,6 +52,7 @@
                             <td>{{ file[1] }}</td>
                             <td>{{ file[3].strftime('%Y-%m-%d %H:%M:%S') }}</td>
                             <td class="action-links">
+                                <a href="{{ url_for('download', file_id=file[0]) }}">Download 📥</a>
                                 <a href="{{ url_for('share', file_id=file[0]) }}">Share 📤</a>
                                 <form method="POST" action="{{ url_for('delete', file_id=file[0]) }}" style="display:inline;">
                                     <button type="submit">Delete 🗑</button>
