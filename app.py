@@ -14,9 +14,9 @@ import logging
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(_name_)
 
-app = Flask(__name__)
+app = Flask(_name_)
 app.secret_key = os.environ.get('SECRET_KEY', 'your-random-secret-key-123')
 
 # Flask-Mail Configuration
@@ -79,9 +79,7 @@ def derive_key(keyword):
     return hasher.digest()
 
 def generate_encrypted_key(file_id, keyword):
-    # Normalize keyword: trim and lowercase
     keyword = keyword.strip().lower()
-    # Use a deterministic hash of file_id and keyword
     hasher = SHA256.new()
     hasher.update(f"{file_id}:{keyword}".encode('utf-8'))
     encrypted_key = base64.b64encode(hasher.digest()).decode('utf-8')
@@ -111,7 +109,7 @@ def search_keyword():
     if 'user_id' not in session:
         return redirect(url_for('login'))
     if request.method == 'POST':
-        keyword = request.form['keyword'].strip().lower()  # Normalize keyword
+        keyword = request.form['keyword'].strip().lower()
         logger.debug(f"Search keyword: {keyword}")
         conn = get_db_connection()
         c = conn.cursor()
@@ -250,30 +248,31 @@ def upload():
     if request.method == 'POST':
         file = request.files['file']
         manual_filename = request.form['manual_filename']
-        keyword = request.form['keyword'].strip().lower()  # Normalize keyword
+        keyword = request.form['keyword'].strip().lower()
         if not file or not manual_filename or not keyword:
             flash('All fields are required.', 'danger')
             return redirect(url_for('upload'))
         original_filename = file.filename
-        file_size = 0
         upload_date = datetime.datetime.utcnow()
         key = derive_key(keyword)
         cipher = AES.new(key, AES.MODE_EAX)
         nonce = cipher.nonce
-        encrypted_data = io.BytesIO()
+        
+        # Encrypt in chunks and store directly as base64
+        encrypted_data_chunks = []
         chunk_size = 1024 * 1024  # 1MB chunks
         while True:
             chunk = file.read(chunk_size)
             if not chunk:
                 break
-            file_size += len(chunk)
             ciphertext = cipher.encrypt(chunk)
-            encrypted_data.write(ciphertext)
+            encrypted_data_chunks.append(base64.b64encode(ciphertext).decode('utf-8'))
         tag = cipher.digest()
-        encrypted_data.seek(0)
-        encrypted_data_b64 = base64.b64encode(encrypted_data.read()).decode('utf-8')
+        
+        encrypted_data_b64 = ''.join(encrypted_data_chunks)
         nonce_b64 = base64.b64encode(nonce).decode('utf-8')
         tag_b64 = base64.b64encode(tag).decode('utf-8')
+        
         conn = get_db_connection()
         c = conn.cursor()
         c.execute("INSERT INTO files (user_id, filename, manual_filename, encrypted_data, nonce, tag, keyword, upload_date) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
@@ -297,21 +296,22 @@ def download(file_id):
         flash('File not found or no access.', 'danger')
         conn.close()
         return redirect(url_for('search_keyword'))
+    
     if request.method == 'POST':
         encrypted_key_input = request.form['encrypted_key']
         expected_encrypted_key = generate_encrypted_key(file_id, file[6])
-        logger.debug(f"Download file_id {file_id}, keyword: {file[6]}")
-        logger.debug(f"Input encrypted key: {encrypted_key_input}")
-        logger.debug(f"Expected encrypted key: {expected_encrypted_key}")
         if encrypted_key_input != expected_encrypted_key:
             flash('Invalid encrypted key.', 'danger')
             conn.close()
             return redirect(url_for('download', file_id=file_id))
+        
         encrypted_data = base64.b64decode(file[1])
         nonce = base64.b64decode(file[2])
         tag = base64.b64decode(file[3])
         key = derive_key(file[6])
         cipher = AES.new(key, AES.MODE_EAX, nonce=nonce)
+        
+        # Decrypt the file
         decrypted_data = io.BytesIO()
         chunk_size = 1024 * 1024
         for i in range(0, len(encrypted_data), chunk_size):
@@ -320,13 +320,33 @@ def download(file_id):
             decrypted_data.write(decrypted_chunk)
         try:
             cipher.verify(tag)
-        except ValueError as e:
-            flash('Decryption failed: Invalid tag. The keyword might be incorrect.', 'danger')
+        except ValueError:
+            flash('Decryption failed: Invalid tag.', 'danger')
             conn.close()
             return redirect(url_for('download', file_id=file_id))
+        
         decrypted_data.seek(0)
-        conn.close()
-        return send_file(decrypted_data, download_name=file[7], as_attachment=True)
+        action = request.form.get('action')
+        
+        if action == 'download':
+            conn.close()
+            return send_file(decrypted_data, download_name=file[7], as_attachment=True)
+        elif action == 'preview':
+            # Determine file type and render preview
+            file_extension = file[7].split('.')[-1].lower()
+            preview_content = None
+            if file_extension in ['txt', 'md']:
+                preview_content = decrypted_data.read().decode('utf-8', errors='ignore')
+            elif file_extension in ['png', 'jpg', 'jpeg', 'gif']:
+                img_data = base64.b64encode(decrypted_data.read()).decode('utf-8')
+                preview_content = f'<img src="data:image/{file_extension};base64,{img_data}" style="max-width:500px;">'
+            elif file_extension == 'pdf':
+                preview_content = '<p>PDF preview not supported yet. Download to view.</p>'
+            else:
+                preview_content = '<p>Preview not available for this file type.</p>'
+            conn.close()
+            return render_template('download.html', file_id=file_id, manual_filename=file[0], preview_content=preview_content)
+    
     conn.close()
     return render_template('download.html', file_id=file_id, manual_filename=file[0])
 
@@ -399,6 +419,31 @@ def access_shared_file(token):
     conn.close()
     return redirect(url_for('download', file_id=file[0]))
 
+@app.route('/forgot_keyword', methods=['GET', 'POST'])
+def forgot_keyword():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    if request.method == 'POST':
+        filename = request.form['filename']
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute("SELECT keyword FROM files WHERE user_id = %s AND manual_filename = %s", 
+                  (session['user_id'], filename))
+        file = c.fetchone()
+        if file:
+            keyword = file[0]
+            c.execute("SELECT email FROM users WHERE id = %s", (session['user_id'],))
+            user_email = c.fetchone()[0]
+            msg = Message('Your Forgotten Keyword', sender=app.config['MAIL_USERNAME'], recipients=[user_email])
+            msg.body = f'The keyword for file "{filename}" is: {keyword}\nUse this to search and download your file.'
+            mail.send(msg)
+            flash('Keyword sent to your email.', 'success')
+        else:
+            flash('File not found.', 'danger')
+        conn.close()
+        return redirect(url_for('search_keyword'))
+    return render_template('forgot_keyword.html')
+
 @app.route('/logout')
 def logout():
     session.pop('user_id', None)
@@ -406,7 +451,7 @@ def logout():
     flash('Logged out successfully.', 'success')
     return redirect(url_for('login'))
 
-if __name__ == '__main__':
+if _name_ == '_main_':
     try:
         init_db()
         port = int(os.environ.get('PORT', 5000))

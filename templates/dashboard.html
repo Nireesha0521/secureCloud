@@ -36,7 +36,7 @@
                 <h2>Your Files</h2>
                 <div class="search-container">
                     <form method="POST" action="{{ url_for('search_filename') }}">
-                        <input type="text" name="search_term" placeholder="Search files by filename or keyword" value="{{ search_term or '' }}">
+                        <input type="text" name="search_term" placeholder="Search files by filename" value="{{ search_term or '' }}">
                     </form>
                 </div>
             </div>
@@ -44,14 +44,12 @@
                 <table>
                     <tr>
                         <th>Filename</th>
-                        <th>Keyword</th>
                         <th>Date & Time</th>
                         <th>Actions</th>
                     </tr>
                     {% for file in files %}
                         <tr>
                             <td>{{ file[1] }}</td>
-                            <td>{{ file[2] }}</td>
                             <td>{{ file[3].strftime('%Y-%m-%d %H:%M:%S') }}</td>
                             <td class="action-links">
                                 <a href="{{ url_for('share', file_id=file[0]) }}">Share 📤</a>
