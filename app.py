@@ -14,9 +14,9 @@ import logging
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(_name_)
 
-app = Flask(__name__)
+app = Flask(_name_)
 app.secret_key = os.environ.get('SECRET_KEY', 'your-random-secret-key-123')
 
 # Flask-Mail Configuration
@@ -72,7 +72,7 @@ def init_db():
                       ('admin@example.com', generate_password_hash('admin123'), 'admin'))
         conn.commit()
     except psycopg2.Error as e:
-        print(f"Database error: {e}")
+        logger.error(f"Database error: {e}")
         if conn: conn.rollback()
         raise e
     finally:
@@ -269,14 +269,21 @@ def upload():
         encrypted_file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{file_id}.enc")
         
         # Encrypt and write to file in chunks
-        with open(encrypted_file_path, 'wb') as f:
-            chunk_size = 1024 * 1024  # 1MB chunks
-            while True:
-                chunk = file.read(chunk_size)
-                if not chunk:
-                    break
-                ciphertext = cipher.encrypt(chunk)
-                f.write(ciphertext)
+        try:
+            with open(encrypted_file_path, 'wb') as f:
+                chunk_size = 1024 * 1024  # 1MB chunks
+                while True:
+                    chunk = file.read(chunk_size)
+                    if not chunk:
+                        break
+                    ciphertext = cipher.encrypt(chunk)
+                    f.write(ciphertext)
+            logger.debug(f"File saved successfully at {encrypted_file_path}")
+        except Exception as e:
+            logger.error(f"Failed to save file at {encrypted_file_path}: {e}")
+            flash('Upload failed due to a server error.', 'danger')
+            return redirect(url_for('upload'))
+        
         tag = cipher.digest()
         
         nonce_b64 = base64.b64encode(nonce).decode('utf-8')
@@ -322,20 +329,33 @@ def download(file_id):
         key = derive_key(file[6])
         cipher = AES.new(key, AES.MODE_EAX, nonce=nonce)
         
+        # Check if file exists before attempting to open
+        file_path = file[1]
+        if not os.path.exists(file_path):
+            logger.error(f"File not found at {file_path}")
+            flash('The file is missing on the server. It may have been deleted or not uploaded correctly.', 'danger')
+            conn.close()
+            return redirect(url_for('download', file_id=file_id))
+        
         # Decrypt the file from filesystem
         decrypted_data = io.BytesIO()
-        with open(file[1], 'rb') as f:
-            chunk_size = 1024 * 1024
-            while True:
-                chunk = f.read(chunk_size)
-                if not chunk:
-                    break
-                decrypted_chunk = cipher.decrypt(chunk)
-                decrypted_data.write(decrypted_chunk)
         try:
+            with open(file_path, 'rb') as f:
+                chunk_size = 1024 * 1024
+                while True:
+                    chunk = f.read(chunk_size)
+                    if not chunk:
+                        break
+                    decrypted_chunk = cipher.decrypt(chunk)
+                    decrypted_data.write(decrypted_chunk)
             cipher.verify(tag)
         except ValueError:
             flash('Decryption failed: Invalid tag.', 'danger')
+            conn.close()
+            return redirect(url_for('download', file_id=file_id))
+        except Exception as e:
+            logger.error(f"Error during decryption of {file_path}: {e}")
+            flash('An error occurred while decrypting the file.', 'danger')
             conn.close()
             return redirect(url_for('download', file_id=file_id))
         
@@ -449,11 +469,11 @@ def logout():
     flash('Logged out successfully.', 'success')
     return redirect(url_for('login'))
 
-if __name__ == '__main__':
+if _name_ == '_main_':
     try:
         init_db()
         port = int(os.environ.get('PORT', 5000))
         app.run(debug=True, host='0.0.0.0', port=port)
     except Exception as e:
-        print(f"Failed to start app: {e}")
+        logger.error(f"Failed to start app: {e}")
         raise e
