@@ -271,7 +271,7 @@ def upload():
         # Encrypt and write to file in chunks
         try:
             with open(encrypted_file_path, 'wb') as f:
-                chunk_size = 1024 * 1024  # 1MB chunks
+                chunk_size = 1024 * 1024
                 while True:
                     chunk = file.read(chunk_size)
                     if not chunk:
@@ -317,10 +317,10 @@ def download(file_id):
         encrypted_key_input = request.form['encrypted_key'].strip()
         expected_encrypted_key = generate_encrypted_key(file_id, file[6])
         logger.debug(f"Download attempt for file_id {file_id}:")
-        logger.debug(f"Input encrypted key: {encrypted_key_input}")
-        logger.debug(f"Expected encrypted key: {expected_encrypted_key}")
+        logger.debug(f"Input encrypted key: '{encrypted_key_input}'")
+        logger.debug(f"Expected encrypted key: '{expected_encrypted_key}'")
         if encrypted_key_input != expected_encrypted_key:
-            flash('Invalid encrypted key. Please ensure you copied the correct key from the search page.', 'danger')
+            flash('Invalid encrypted key. Please ensure you copied the exact key from the search page without extra spaces or characters.', 'danger')
             conn.close()
             return redirect(url_for('download', file_id=file_id))
         
@@ -329,7 +329,6 @@ def download(file_id):
         key = derive_key(file[6])
         cipher = AES.new(key, AES.MODE_EAX, nonce=nonce)
         
-        # Check if file exists before attempting to open
         file_path = file[1]
         if not os.path.exists(file_path):
             logger.error(f"File not found at {file_path}")
@@ -337,7 +336,6 @@ def download(file_id):
             conn.close()
             return redirect(url_for('download', file_id=file_id))
         
-        # Decrypt the file from filesystem
         decrypted_data = io.BytesIO()
         try:
             with open(file_path, 'rb') as f:
@@ -393,9 +391,18 @@ def share(file_id):
         share_link = url_for('access_shared_file', token=share_token, _external=True)
         keyword = file[1]
         msg = Message('File Shared with You', sender=app.config['MAIL_USERNAME'], recipients=[email])
-        msg.body = f'A file has been shared with you: {share_link}\nKeyword: {keyword}\nSearch with this keyword to get the encrypted key for download.'
-        mail.send(msg)
-        flash('File shared successfully! Keyword sent to recipient.', 'success')
+        msg.html = f"""
+        <p>A file has been shared with you:</p>
+        <p><a href="{share_link}">Click here to access the file</a></p>
+        <p><strong>Keyword:</strong> {keyword}</p>
+        <p>Use this keyword in the search page to get the encrypted key for download.</p>
+        """
+        try:
+            mail.send(msg)
+            flash('File shared successfully! Share link and keyword sent to recipient.', 'success')
+        except Exception as e:
+            logger.error(f"Failed to send share email: {e}")
+            flash('Failed to send share email.', 'danger')
         conn.close()
         return redirect(url_for('dashboard'))
     conn.close()
