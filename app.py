@@ -16,7 +16,7 @@ import logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(_name_)
 
-app = Flask(_name_)
+app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'your-random-secret-key-123')
 
 # Flask-Mail Configuration
@@ -451,7 +451,7 @@ def logout():
     flash('Logged out successfully.', 'success')
     return redirect(url_for('login'))
 
-if _name_ == '_main_':
+if __name__ == '__main__':
     try:
         init_db()
         port = int(os.environ.get('PORT', 5000))
