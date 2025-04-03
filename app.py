@@ -340,29 +340,8 @@ def download(file_id):
             return redirect(url_for('download', file_id=file_id))
         
         decrypted_data.seek(0)
-        action = request.form.get('action')
-        
-        if action == 'download':
-            conn.close()
-            return send_file(decrypted_data, download_name=file[7], as_attachment=True)
-        elif action == 'preview':
-            file_extension = file[7].split('.')[-1].lower()
-            preview_content = None
-            if file_extension in ['txt', 'md']:
-                preview_content = decrypted_data.read().decode('utf-8', errors='ignore')
-            elif file_extension in ['png', 'jpg', 'jpeg', 'gif']:
-                img_data = base64.b64encode(decrypted_data.read()).decode('utf-8')
-                preview_content = f'<img src="data:image/{file_extension};base64,{img_data}" style="max-width:500px;">'
-            elif file_extension == 'pdf':
-                pdf_data = base64.b64encode(decrypted_data.read()).decode('utf-8')
-                preview_content = f'<embed src="data:application/pdf;base64,{pdf_data}" type="application/pdf" width="500" height="600">'
-            elif file_extension in ['mp4', 'webm', 'ogg']:
-                video_data = base64.b64encode(decrypted_data.read()).decode('utf-8')
-                preview_content = f'<video controls width="500"><source src="data:video/{file_extension};base64,{video_data}" type="video/{file_extension}">Your browser does not support the video tag.</video>'
-            else:
-                preview_content = '<p>Preview not available for this file type.</p>'
-            conn.close()
-            return render_template('download.html', file_id=file_id, manual_filename=file[0], preview_content=preview_content)
+        conn.close()
+        return send_file(decrypted_data, download_name=file[7], as_attachment=True)
     
     conn.close()
     return render_template('download.html', file_id=file_id, manual_filename=file[0])

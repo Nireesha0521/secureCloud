@@ -11,7 +11,7 @@
             <li><a href="{{ url_for('dashboard') }}">Home</a></li>
             <li><a href="{{ url_for('upload') }}">Upload</a></li>
             <li><a href="{{ url_for('search_keyword') }}">Search</a></li>
-            <li><a href="{{ url_for('search_keyword') }}">Download File</a></li>
+            <li><a href="{{ url_for('forgot_keyword') }}">Forgot Keyword</a></li>
         </ul>
         <div class="profile-container">
             <div class="profile-icon" id="profileIcon" onclick="toggleProfile()">{{ session['username'][0]|upper }}</div>

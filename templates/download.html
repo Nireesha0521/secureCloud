@@ -11,7 +11,7 @@
             <li><a href="{{ url_for('dashboard') }}">Home</a></li>
             <li><a href="{{ url_for('upload') }}">Upload</a></li>
             <li><a href="{{ url_for('search_keyword') }}">Search</a></li>
-            <li><a href="{{ url_for('search_keyword') }}">Download File</a></li>
+            <li><a href="{{ url_for('forgot_keyword') }}">Forgot Keyword</a></li>
         </ul>
         <div class="profile-container">
             <div class="profile-icon" id="profileIcon" onclick="toggleProfile()">{{ session['username'][0]|upper }}</div>
@@ -22,7 +22,7 @@
         </div>
     </div>
     <div class="container">
-        <h1>Download or Preview "{{ manual_filename }}"</h1>
+        <h1>Download "{{ manual_filename }}"</h1>
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 {% for category, message in messages %}
@@ -31,15 +31,11 @@
             {% endif %}
         {% endwith %}
         <form method="POST" action="{{ url_for('download', file_id=file_id) }}">
-            <label>Enter Encrypted Key (from Search):</label><input type="text" name="encrypted_key" required><br>
-            <button type="submit" name="action" value="download">Download</button>
-            <button type="submit" name="action" value="preview">Preview</button>
+            <label>Enter Encrypted Key (from Search):</label><br>
+            <input type="text" name="encrypted_key" required><br>
+            <button type="submit">Download</button>
         </form>
-        {% if preview_content %}
-            <h2>Preview:</h2>
-            {{ preview_content|safe }}
-        {% endif %}
-        <p><a href="{{ url_for('search_keyword') }}">Back to Search</a></p>
+        <p><a href="{{ url_for('search_keyword') }}">Get Encrypted Key</a> | <a href="{{ url_for('forgot_keyword') }}">Forgot Keyword?</a> | <a href="{{ url_for('dashboard') }}">Back to Dashboard</a></p>
     </div>
     <script>
         function toggleProfile() {
