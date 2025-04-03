@@ -27,6 +27,12 @@ app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME')
 app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD')
 mail = Mail(app)
 
+# Directory for storing encrypted files
+UPLOAD_FOLDER = 'uploads'
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
 # Database Connection
 def get_db_connection():
     return psycopg2.connect(os.environ['DATABASE_URL'])
@@ -46,7 +52,7 @@ def init_db():
             user_id INTEGER REFERENCES users(id),
             filename VARCHAR(255) NOT NULL,
             manual_filename VARCHAR(255) NOT NULL,
-            encrypted_data TEXT NOT NULL,
+            file_path TEXT NOT NULL,  -- Changed from encrypted_data to file_path
             nonce TEXT NOT NULL,
             tag TEXT NOT NULL,
             keyword TEXT NOT NULL,
@@ -258,25 +264,28 @@ def upload():
         cipher = AES.new(key, AES.MODE_EAX)
         nonce = cipher.nonce
         
-        # Encrypt in chunks and store directly as base64
-        encrypted_data_chunks = []
-        chunk_size = 1024 * 1024  # 1MB chunks
-        while True:
-            chunk = file.read(chunk_size)
-            if not chunk:
-                break
-            ciphertext = cipher.encrypt(chunk)
-            encrypted_data_chunks.append(base64.b64encode(ciphertext).decode('utf-8'))
+        # Generate unique file path
+        file_id = str(uuid.uuid4())
+        encrypted_file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{file_id}.enc")
+        
+        # Encrypt and write to file in chunks
+        with open(encrypted_file_path, 'wb') as f:
+            chunk_size = 1024 * 1024  # 1MB chunks
+            while True:
+                chunk = file.read(chunk_size)
+                if not chunk:
+                    break
+                ciphertext = cipher.encrypt(chunk)
+                f.write(ciphertext)
         tag = cipher.digest()
         
-        encrypted_data_b64 = ''.join(encrypted_data_chunks)
         nonce_b64 = base64.b64encode(nonce).decode('utf-8')
         tag_b64 = base64.b64encode(tag).decode('utf-8')
         
         conn = get_db_connection()
         c = conn.cursor()
-        c.execute("INSERT INTO files (user_id, filename, manual_filename, encrypted_data, nonce, tag, keyword, upload_date) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                  (session['user_id'], original_filename, manual_filename, encrypted_data_b64, nonce_b64, tag_b64, keyword, upload_date))
+        c.execute("INSERT INTO files (user_id, filename, manual_filename, file_path, nonce, tag, keyword, upload_date) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                  (session['user_id'], original_filename, manual_filename, encrypted_file_path, nonce_b64, tag_b64, keyword, upload_date))
         conn.commit()
         conn.close()
         flash('File uploaded successfully!', 'success')
@@ -289,7 +298,7 @@ def download(file_id):
         return redirect(url_for('login'))
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute("SELECT manual_filename, encrypted_data, nonce, tag, user_id, shared_with, keyword, filename FROM files WHERE id = %s",
+    c.execute("SELECT manual_filename, file_path, nonce, tag, user_id, shared_with, keyword, filename FROM files WHERE id = %s",
               (file_id,))
     file = c.fetchone()
     if not file or (file[4] != session['user_id'] and file[5] != session['user_id']):
@@ -298,26 +307,31 @@ def download(file_id):
         return redirect(url_for('search_keyword'))
     
     if request.method == 'POST':
-        encrypted_key_input = request.form['encrypted_key']
+        encrypted_key_input = request.form['encrypted_key'].strip()
         expected_encrypted_key = generate_encrypted_key(file_id, file[6])
+        logger.debug(f"Download attempt for file_id {file_id}:")
+        logger.debug(f"Input encrypted key: {encrypted_key_input}")
+        logger.debug(f"Expected encrypted key: {expected_encrypted_key}")
         if encrypted_key_input != expected_encrypted_key:
-            flash('Invalid encrypted key.', 'danger')
+            flash('Invalid encrypted key. Please ensure you copied the correct key from the search page.', 'danger')
             conn.close()
             return redirect(url_for('download', file_id=file_id))
         
-        encrypted_data = base64.b64decode(file[1])
         nonce = base64.b64decode(file[2])
         tag = base64.b64decode(file[3])
         key = derive_key(file[6])
         cipher = AES.new(key, AES.MODE_EAX, nonce=nonce)
         
-        # Decrypt the file
+        # Decrypt the file from filesystem
         decrypted_data = io.BytesIO()
-        chunk_size = 1024 * 1024
-        for i in range(0, len(encrypted_data), chunk_size):
-            chunk = encrypted_data[i:i + chunk_size]
-            decrypted_chunk = cipher.decrypt(chunk)
-            decrypted_data.write(decrypted_chunk)
+        with open(file[1], 'rb') as f:
+            chunk_size = 1024 * 1024
+            while True:
+                chunk = f.read(chunk_size)
+                if not chunk:
+                    break
+                decrypted_chunk = cipher.decrypt(chunk)
+                decrypted_data.write(decrypted_chunk)
         try:
             cipher.verify(tag)
         except ValueError:
@@ -332,7 +346,6 @@ def download(file_id):
             conn.close()
             return send_file(decrypted_data, download_name=file[7], as_attachment=True)
         elif action == 'preview':
-            # Determine file type and render preview
             file_extension = file[7].split('.')[-1].lower()
             preview_content = None
             if file_extension in ['txt', 'md']:
@@ -391,12 +404,15 @@ def delete(file_id):
         return redirect(url_for('login'))
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute("SELECT user_id FROM files WHERE id = %s", (file_id,))
+    c.execute("SELECT user_id, file_path FROM files WHERE id = %s", (file_id,))
     file = c.fetchone()
     if not file or file[0] != session['user_id']:
         flash('File not found or no permission.', 'danger')
         conn.close()
         return redirect(url_for('dashboard'))
+    # Delete the file from filesystem
+    if os.path.exists(file[1]):
+        os.remove(file[1])
     c.execute("DELETE FROM files WHERE id = %s AND user_id = %s", (file_id, session['user_id']))
     conn.commit()
     conn.close()
