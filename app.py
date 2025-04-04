@@ -14,9 +14,9 @@ import logging
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(_name_)
 
-app = Flask(__name__)
+app = Flask(_name_)
 app.secret_key = os.environ.get('SECRET_KEY', 'your-random-secret-key-123')
 
 # Flask-Mail Configuration
@@ -86,10 +86,11 @@ def derive_key(keyword):
 
 def generate_encrypted_key(file_id, keyword):
     keyword = keyword.strip().lower()
+    key_input = f"{file_id}:{keyword}"
     hasher = SHA256.new()
-    hasher.update(f"{file_id}:{keyword}".encode('utf-8'))
+    hasher.update(key_input.encode('utf-8'))
     encrypted_key = base64.b64encode(hasher.digest()).decode('utf-8')
-    logger.debug(f"Generated encrypted key for file_id {file_id} with keyword {keyword}: {encrypted_key}")
+    logger.debug(f"Generating key - file_id: {file_id}, keyword: '{keyword}', input: '{key_input}', result: '{encrypted_key}'")
     return encrypted_key
 
 # Routes
@@ -116,12 +117,13 @@ def search_keyword():
         return redirect(url_for('login'))
     if request.method == 'POST':
         keyword = request.form['keyword'].strip().lower()
-        logger.debug(f"Search keyword: {keyword}")
+        logger.debug(f"Search initiated with keyword: '{keyword}' for user_id: {session['user_id']}")
         conn = get_db_connection()
         c = conn.cursor()
-        c.execute("SELECT id, manual_filename, keyword FROM files WHERE user_id = %s AND keyword = %s",
-                  (session['user_id'], keyword))
+        c.execute("SELECT id, manual_filename, keyword FROM files WHERE (user_id = %s OR shared_with = %s) AND keyword = %s",
+                  (session['user_id'], session['user_id'], keyword))
         files = c.fetchall()
+        logger.debug(f"Search query returned {len(files)} files: {files}")
         matching_files = []
         for file in files:
             encrypted_key = generate_encrypted_key(file[0], file[2])
@@ -264,11 +266,9 @@ def upload():
         cipher = AES.new(key, AES.MODE_EAX)
         nonce = cipher.nonce
         
-        # Generate unique file path
         file_id = str(uuid.uuid4())
         encrypted_file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{file_id}.enc")
         
-        # Encrypt and write to file in chunks
         try:
             with open(encrypted_file_path, 'wb') as f:
                 chunk_size = 1024 * 1024
@@ -317,49 +317,50 @@ def download(file_id):
         encrypted_key_input = request.form['encrypted_key'].strip()
         expected_encrypted_key = generate_encrypted_key(file_id, file[6])
         logger.debug(f"Download attempt for file_id {file_id}:")
+        logger.debug(f"Database keyword: '{file[6]}'")
         logger.debug(f"Input encrypted key: '{encrypted_key_input}'")
         logger.debug(f"Expected encrypted key: '{expected_encrypted_key}'")
-        if encrypted_key_input != expected_encrypted_key:
-            flash('Invalid encrypted key. Please ensure you copied the exact key from the search page without extra spaces or characters.', 'danger')
+        if encrypted_key_input == expected_encrypted_key:
+            nonce = base64.b64decode(file[2])
+            tag = base64.b64decode(file[3])
+            key = derive_key(file[6])
+            cipher = AES.new(key, AES.MODE_EAX, nonce=nonce)
+            
+            file_path = file[1]
+            if not os.path.exists(file_path):
+                logger.error(f"File not found at {file_path}")
+                flash('The file is missing on the server. It may have been deleted or not uploaded correctly.', 'danger')
+                conn.close()
+                return redirect(url_for('download', file_id=file_id))
+            
+            decrypted_data = io.BytesIO()
+            try:
+                with open(file_path, 'rb') as f:
+                    chunk_size = 1024 * 1024
+                    while True:
+                        chunk = f.read(chunk_size)
+                        if not chunk:
+                            break
+                        decrypted_chunk = cipher.decrypt(chunk)
+                        decrypted_data.write(decrypted_chunk)
+                cipher.verify(tag)
+            except ValueError:
+                flash('Decryption failed: Invalid tag.', 'danger')
+                conn.close()
+                return redirect(url_for('download', file_id=file_id))
+            except Exception as e:
+                logger.error(f"Error during decryption of {file_path}: {e}")
+                flash('An error occurred while decrypting the file.', 'danger')
+                conn.close()
+                return redirect(url_for('download', file_id=file_id))
+            
+            decrypted_data.seek(0)
+            conn.close()
+            return send_file(decrypted_data, download_name=file[7], as_attachment=True)
+        else:
+            flash('Invalid encrypted key. Please copy the exact key from the search page without extra spaces or characters.', 'danger')
             conn.close()
             return redirect(url_for('download', file_id=file_id))
-        
-        nonce = base64.b64decode(file[2])
-        tag = base64.b64decode(file[3])
-        key = derive_key(file[6])
-        cipher = AES.new(key, AES.MODE_EAX, nonce=nonce)
-        
-        file_path = file[1]
-        if not os.path.exists(file_path):
-            logger.error(f"File not found at {file_path}")
-            flash('The file is missing on the server. It may have been deleted or not uploaded correctly.', 'danger')
-            conn.close()
-            return redirect(url_for('download', file_id=file_id))
-        
-        decrypted_data = io.BytesIO()
-        try:
-            with open(file_path, 'rb') as f:
-                chunk_size = 1024 * 1024
-                while True:
-                    chunk = f.read(chunk_size)
-                    if not chunk:
-                        break
-                    decrypted_chunk = cipher.decrypt(chunk)
-                    decrypted_data.write(decrypted_chunk)
-            cipher.verify(tag)
-        except ValueError:
-            flash('Decryption failed: Invalid tag.', 'danger')
-            conn.close()
-            return redirect(url_for('download', file_id=file_id))
-        except Exception as e:
-            logger.error(f"Error during decryption of {file_path}: {e}")
-            flash('An error occurred while decrypting the file.', 'danger')
-            conn.close()
-            return redirect(url_for('download', file_id=file_id))
-        
-        decrypted_data.seek(0)
-        conn.close()
-        return send_file(decrypted_data, download_name=file[7], as_attachment=True)
     
     conn.close()
     return render_template('download.html', file_id=file_id, manual_filename=file[0])
@@ -390,6 +391,7 @@ def share(file_id):
         conn.commit()
         share_link = url_for('access_shared_file', token=share_token, _external=True)
         keyword = file[1]
+        logger.debug(f"Sharing file_id {file_id} with keyword: '{keyword}' to user_id: {recipient[0]}")
         msg = Message('File Shared with You', sender=app.config['MAIL_USERNAME'], recipients=[email])
         msg.html = f"""
         <p>A file has been shared with you:</p>
@@ -476,7 +478,7 @@ def logout():
     flash('Logged out successfully.', 'success')
     return redirect(url_for('login'))
 
-if __name__ == '__main__':
+if _name_ == '_main_':
     try:
         init_db()
         port = int(os.environ.get('PORT', 5000))
